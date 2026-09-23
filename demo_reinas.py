@@ -54,7 +54,7 @@ def main() -> None:
     """Punto de entrada de la demostración."""
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     
-    n_reinas = 20
+    n_reinas = 8
     logging.info(f"Formalizando el problema de las {n_reinas}-Reinas en FNC.")
     
     generador_problema = ProblemaNReinasCNF(n_reinas)
