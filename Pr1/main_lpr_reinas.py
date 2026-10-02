@@ -65,7 +65,7 @@ class VisualizadorNReinas:
 
 def main() -> None:
     """Punto de entrada de la demostración. El tamaño del tablero se cambia aquí."""
-    n_reinas = 8  # tablero N x N con N reinas
+    n_reinas = 20  # tablero N x N con N reinas
 
     problema = ProblemaNReinasCNF(n_reinas)
     clausulas, variables = problema.generar_base_conocimiento()

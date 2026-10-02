@@ -51,7 +51,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
     n_tablero = 5
-    gamma_max = 3
+    gamma_max = 4
     independiente = False   # True: además, las reinas no pueden atacarse entre sí
 
     # Se prueba gamma = 1, 2, ... hasta hallar el menor número de reinas que domina el tablero.
