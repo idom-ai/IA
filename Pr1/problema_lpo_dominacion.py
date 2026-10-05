@@ -27,6 +27,7 @@ class ProblemaDominacionLPO:
             gamma (int): Número máximo de reinas.
             independiente (bool): Exigir que las reinas no se ataquen entre sí.
         """
+        
         self.n = n
         self.gamma = gamma
         self.independiente = independiente
