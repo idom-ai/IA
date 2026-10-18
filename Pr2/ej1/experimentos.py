@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Experimentos: mapa de España y validación frente a un solver centralizado."""
+"""Experimento: coloreado distribuido del mapa de España con ABT y AWC (2, 3 y 4 colores)."""
 
 from __future__ import annotations
 
@@ -9,22 +9,24 @@ import random
 from problema import ColoringProblem, solve_centralized, spain_problem
 from simulador import random_initial_values, run_distributed
 from utilidades import banner, check, print_table
-from visualizacion import COLOR_NAME, Output, plot_run, save_animation
+from visualizacion import COLOR_NAME, Output, plot_nogood_proof, plot_run, save_animation
 
 
 def experiment_spain(out: Output, rng: random.Random, make_gif: bool) -> None:
-    """Experimento 1: colorear el mapa de España con 15 agentes (caso visual principal).
+    """Experimento: colorear el mapa de España con 15 agentes (caso visual principal).
 
     Se resuelve con AWC (prioridades dinámicas) y con ABT, partiendo de los mismos colores
-    iniciales aleatorios, y se comprueba que la solución final es válida.
+    iniciales aleatorios, con 3, 4 y 2 colores. Con 3 y 4 colores encuentran un coloreado válido; con
+    2 colores no hay solución (Cantabria, País Vasco y Castilla y León son vecinas dos a dos) y los
+    agentes lo demuestran. En todos los casos el resultado se contrasta con un solver centralizado.
 
     Args:
         out: Gestor de salida.
         rng: Generador de números aleatorios.
         make_gif: Si es ``True``, guarda también un GIF.
     """
-    banner("EXPERIMENTO 1 · Colorear el mapa de España: 15 agentes, uno por comunidad autónoma")
-    for k in (3, 4):
+    banner("EXPERIMENTO · Colorear el mapa de España: 15 agentes, uno por comunidad autónoma")
+    for k in (3, 4, 2):
         problem = spain_problem(k)
         solvable = solve_centralized(problem) is not None
         print(f"Con {k} colores el problema {'SÍ' if solvable else 'NO'} tiene solución "
@@ -53,55 +55,43 @@ def experiment_spain(out: Output, rng: random.Random, make_gif: bool) -> None:
                     print(f"   [animación] guardada en {gif}")
         else:
             print("   ABT/AWC deducen que no hay solución al generar el nogood vacío (completitud del algoritmo).")
+            print("   Motivo: Cantabria, País Vasco y Castilla y León son vecinas dos a dos (un triángulo),")
+            print("   y tres regiones vecinas entre sí no pueden pintarse con solo 2 colores.")
+            explain_triangle(out)
         print()
 
 
-def experiment_validation(out: Output, rng: random.Random, n_problems: int) -> None:
-    """Experimento 2: validación de ABT y AWC frente a un solver centralizado.
 
-    Sobre grafos pequeños aleatorios (con y sin solución), comprueba que cada algoritmo (a) devuelve
-    una solución válida cuando existe y (b) detecta que no existe cuando es así.
+def explain_triangle(out: Output) -> None:
+    """Muestra, paso a paso, cómo ABT demuestra que el triángulo Can-PV-CyL no admite 2 colores.
+
+    Ejecuta ABT sobre el triángulo (prioridad Can > PV > CyL), imprime la cadena de nogoods que se
+    envían los agentes hasta llegar al nogood vacío y dibuja la figura correspondiente.
 
     Args:
         out: Gestor de salida.
-        rng: Generador de números aleatorios.
-        n_problems: Número de problemas aleatorios.
     """
-    del out
-    banner("EXPERIMENTO 2 · Validación: ABT y AWC frente a un solver centralizado (grafos pequeños)")
-    print("Ejemplo mínimo: Cantabria, País Vasco y Castilla y León son vecinas dos a dos (un triángulo).")
-    rows = []
-    for k in (2, 3):
-        triangle = ColoringProblem("triángulo", k, [(0, 1), (0, 2), (1, 2)], ["Can", "PV", "CyL"])
-        for algo in ("ABT", "AWC"):
-            res = run_distributed(triangle, algo, [0] * 3, seed=1)
-            answer = ("solución: " + ", ".join(f"{l}={COLOR_NAME[c]}" for l, c in zip(triangle.labels, res.values))
-                      if res.status == "resuelto" else "demuestra que NO hay solución")
-            rows.append([k, algo, answer])
-    print_table(["colores", "algoritmo", "resultado"], rows)
+    triangle = ColoringProblem("triángulo", 2, [(0, 1), (0, 2), (1, 2)], ["Can", "PV", "CyL"],
+                               positions=[(-1.0, 0.8), (1.0, 0.8), (0.0, -0.9)])
+    res = run_distributed(triangle, "ABT", [0, 1, 0], seed=1, record_trace=True)
     print()
-    totals = {"ABT": [0, 0, 0], "AWC": [0, 0, 0]}  # aciertos, con solución, sin solución
-    mismatches = 0
-    n_solvable = n_unsolvable = 0
-    for _ in range(n_problems):
-        n = rng.randint(5, 9)
-        k = rng.choice([2, 3, 3])
-        all_pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
-        edges = rng.sample(all_pairs, rng.randint(n - 1, min(len(all_pairs), 2 * n + 2)))
-        problem = ColoringProblem("aleatorio", k, edges, [f"x{i + 1}" for i in range(n)])
-        solvable = solve_centralized(problem) is not None
-        n_solvable += solvable
-        n_unsolvable += not solvable
-        initial = random_initial_values(problem, rng)
-        for algo in ("ABT", "AWC"):
-            res = run_distributed(problem, algo, initial, seed=rng.randrange(10 ** 6), max_cycles=5000)
-            correct = (res.status == "resuelto" and solvable and problem.n_violations(res.values) == 0) or \
-                      (res.status == "sin_solucion" and not solvable)
-            totals[algo][0] += correct
-            totals[algo][1 if solvable else 2] += 1
-            mismatches += not correct
-    rows = [[a, f"{v[0]}/{n_problems}", v[1], v[2]] for a, v in totals.items()]
-    print_table(["algoritmo", "respuestas correctas", "problemas con solución", "problemas sin solución"], rows)
-    check(mismatches == 0, f"ABT y AWC coinciden con el solver centralizado en los {n_problems} problemas "
-                           f"({n_solvable} con solución y {n_unsolvable} sin ella).",
-          f"{mismatches} respuestas incorrectas")
+    print("   Ejemplo mínimo (solo el triángulo, ABT): cadena de nogoods hasta la demostración")
+    step = 1
+    seen = set()
+    for c, msgs in enumerate(res.log[:res.cycles]):
+        for dest, msg in msgs:
+            if msg[0] == "nogood":
+                ng = ", ".join(f"{triangle.labels[a]}={COLOR_NAME[v]}" for a, v in sorted(msg[2]))
+                if msg[2] in seen:
+                    print(f"        (ciclo {c}: {triangle.labels[msg[1]]} repite el nogood {{{ng}}}; no aporta nada nuevo)")
+                    continue
+                seen.add(msg[2])
+                print(f"     {step}. ciclo {c}: {triangle.labels[msg[1]]} se bloquea y envía a "
+                      f"{triangle.labels[dest]} el nogood {{{ng}}}")
+                step += 1
+    print(f"     {step}. ciclo {res.cycles}: {triangle.labels[res.failed_agent]} tiene prohibidos los dos colores "
+          f"sin depender de nadie -> nogood vacío {{ }} -> NO hay solución")
+    check(res.status == "sin_solucion", "ABT demuestra que el triángulo no se puede pintar con 2 colores.",
+          "ABT no llegó al nogood vacío")
+    plot_nogood_proof(triangle, res, out, "exp1_triangulo_2colores",
+                      full_names=["Cantabria", "País Vasco", "Castilla y León"])

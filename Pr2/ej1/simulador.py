@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from agentes import Agent, Message
 from problema import ColoringProblem
@@ -30,6 +30,9 @@ class RunResult:
         values: Colores finales de los agentes.
         trace: Para cada ciclo: ``(colores, prioridades, nº de conflictos, mensajes del ciclo)``;
             el elemento 0 es la situación inicial.
+        log: Para cada ciclo, los mensajes enviados como ``(destinatario, mensaje)``; el elemento 0
+            son los mensajes iniciales. Solo se rellena con ``record_trace=True``.
+        failed_agent: Agente que dedujo el nogood vacío (``None`` si no ocurrió).
     """
 
     algorithm: str
@@ -38,6 +41,8 @@ class RunResult:
     messages: int
     values: List[int]
     trace: List[Tuple[List[int], List[int], int, int]] = field(default_factory=list)
+    log: List[List[Tuple[int, Message]]] = field(default_factory=list)
+    failed_agent: Optional[int] = None
 
 
 def run_distributed(problem: ColoringProblem, algorithm: str, initial_values: Sequence[int],
@@ -72,6 +77,7 @@ def run_distributed(problem: ColoringProblem, algorithm: str, initial_values: Se
         inboxes[dest].append(msg)
     total_msgs += len(start_out)
     trace: List[Tuple[List[int], List[int], int, int]] = []
+    log: List[List[Tuple[int, Message]]] = [list(start_out)] if record_trace else []
 
     def snapshot(n_msgs: int) -> None:
         if record_trace:
@@ -87,6 +93,7 @@ def run_distributed(problem: ColoringProblem, algorithm: str, initial_values: Se
             break
         delivering, inboxes = inboxes, [[] for _ in agents]
         sent = 0
+        cycle_log: List[Tuple[int, Message]] = []
         for ag, msgs in zip(agents, delivering):
             if msgs:
                 out: List[Tuple[int, Message]] = []
@@ -94,6 +101,9 @@ def run_distributed(problem: ColoringProblem, algorithm: str, initial_values: Se
                 for dest, msg in out:
                     inboxes[dest].append(msg)
                 sent += len(out)
+                cycle_log.extend(out)
+        if record_trace:
+            log.append(cycle_log)
         cycles += 1
         total_msgs += sent
         snapshot(sent)
@@ -105,7 +115,8 @@ def run_distributed(problem: ColoringProblem, algorithm: str, initial_values: Se
     values = [a.value for a in agents]
     if status == "estable":
         status = "resuelto" if problem.n_violations(values) == 0 else "error"
-    return RunResult(algorithm.upper(), status, cycles, total_msgs, values, trace)
+    failed = next((a.idx for a in agents if a.no_solution), None)
+    return RunResult(algorithm.upper(), status, cycles, total_msgs, values, trace, log, failed)
 
 
 def random_initial_values(problem: ColoringProblem, rng: random.Random) -> List[int]:

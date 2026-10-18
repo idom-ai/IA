@@ -35,7 +35,6 @@ la implementación sigue su descripción textual y los ejemplos de ejecución (F
 Uso:
     python main.py                  # ejecución completa (guarda PNG/GIF y abre ventanas)
     python main.py --sin-pantalla   # no abre ventanas (solo guarda ficheros)
-    python main.py --rapido         # versión reducida de los experimentos
     python main.py --help           # todas las opciones
 
 Dependencias: Python >= 3.9, numpy, matplotlib (``pip install numpy matplotlib``).
@@ -47,7 +46,7 @@ Estructura del proyecto (todos los ficheros en la misma carpeta):
     simulador.py       simulación por ciclos de los agentes
     visualizacion.py   figuras y animaciones
     utilidades.py      impresión por consola (encabezados, tablas, comprobaciones)
-    experimentos.py    los dos experimentos
+    experimentos.py    el experimento (mapa de España con 3, 4 y 2 colores)
 """
 
 from __future__ import annotations
@@ -59,7 +58,7 @@ import time
 
 import matplotlib.pyplot as plt
 
-from experimentos import experiment_spain, experiment_validation
+from experimentos import experiment_spain
 from utilidades import banner
 from visualizacion import Output
 
@@ -72,7 +71,6 @@ def parse_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(description="Práctica 2 · Ej. 1: coloreado distribuido (ABT/AWC).")
     parser.add_argument("--sin-pantalla", action="store_true", help="no abrir ventanas con las figuras (solo guardarlas)")
-    parser.add_argument("--rapido", action="store_true", help="versión reducida de los experimentos")
     parser.add_argument("--sin-gif", action="store_true", help="no generar las animaciones GIF")
     parser.add_argument("--semilla", type=int, default=7, help="semilla aleatoria (por defecto 7)")
     parser.add_argument("--salida", default="resultados_ej1", help="carpeta de salida (por defecto resultados_ej1)")
@@ -80,7 +78,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """Ejecuta los dos experimentos, guarda las figuras y muestra un resumen final."""
+    """Ejecuta el experimento, guarda las figuras y muestra un resumen final."""
     args = parse_args()
     if args.sin_pantalla:
         plt.switch_backend("Agg")
@@ -90,7 +88,6 @@ def main() -> None:
     t0 = time.perf_counter()
 
     experiment_spain(out, rng, make_gif=not args.sin_gif)
-    experiment_validation(out, rng, n_problems=300 if not args.rapido else 60)
 
     banner("FIN")
     print(f"Tiempo total: {time.perf_counter() - t0:.1f} s. Resultados guardados en: {os.path.abspath(out.directory)}")

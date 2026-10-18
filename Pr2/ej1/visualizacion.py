@@ -183,3 +183,112 @@ def save_animation(problem: ColoringProblem, result: RunResult, filename: str, f
     except Exception as exc:  # noqa: BLE001 - la animación es opcional
         print(f"   [aviso] no se pudo guardar la animación: {exc}")
         return False
+
+
+def _nogood_text(nogood: Sequence[Tuple[int, int]], problem: ColoringProblem) -> str:
+    """Traduce un nogood a una frase corta en castellano.
+
+    Args:
+        nogood: Pares (agente, color) que no pueden darse a la vez.
+        problem: Problema (para los nombres de los agentes).
+
+    Returns:
+        Frase con el significado del nogood.
+    """
+    pairs = sorted(nogood)
+    if not pairs:
+        return "{ }  (nogood vacío)"
+    if len(pairs) == 1:
+        a, v = pairs[0]
+        return f"«{problem.labels[a]} no puede ser {COLOR_NAME[v]}»"
+    parts = " y ".join(f"{problem.labels[a]}={COLOR_NAME[v]}" for a, v in pairs)
+    return f"«{parts}\nno pueden darse a la vez»"
+
+
+def plot_nogood_proof(problem: ColoringProblem, result: RunResult, out: Output, name: str,
+                      full_names: Optional[Sequence[str]] = None) -> None:
+    """Figura paso a paso de cómo los agentes demuestran que no hay solución.
+
+    Dibuja un panel por ciclo de la ejecución: el color de cada agente al final del ciclo, los
+    mensajes enviados en ese ciclo (flechas grises ``ok?`` y flechas rojas ``nogood``) y, debajo,
+    qué combinación prohíbe cada nogood. El último panel marca al agente que deduce el nogood vacío.
+
+    Args:
+        problem: Problema pequeño sin solución (p. ej. un triángulo con 2 colores).
+        result: Resultado con traza y registro de mensajes (``record_trace=True``).
+        out: Gestor de salida.
+        name: Nombre del fichero (sin extensión).
+        full_names: Nombres largos de los agentes para el pie de figura (opcional).
+    """
+    from matplotlib.patches import FancyArrowPatch
+
+    pos = layout_positions(problem)
+    n_panels = len(result.trace)
+    n_cols = min(4, n_panels)
+    n_rows = math.ceil(n_panels / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4.4 * n_cols, 4.9 * n_rows + 0.8))
+    axes = np.atleast_1d(axes).ravel()
+    radius = 0.32
+    last = n_panels - 1
+    seen = set()
+    for c, ax in enumerate(axes):
+        ax.axis("off")
+        if c >= n_panels:
+            continue
+        vals = result.trace[c][0]
+        final = c == last and result.failed_agent is not None
+        for i, j in problem.edges:
+            same = vals[i] == vals[j]
+            ax.plot([pos[i][0], pos[j][0]], [pos[i][1], pos[j][1]], color="#222222" if same else "#9a9a9a",
+                    lw=3 if same else 1.4, linestyle=":" if same else "-", zorder=1)
+        for i, (x, y) in enumerate(pos):
+            failed = final and i == result.failed_agent
+            ax.add_patch(plt.Circle((x, y), radius, facecolor=COLOR_HEX[vals[i]],
+                                    edgecolor="#d62728" if failed else "black", lw=4 if failed else 1, zorder=3))
+            ax.text(x, y, problem.labels[i], ha="center", va="center", fontsize=9, fontweight="bold",
+                    color="white", zorder=4)
+        lines = []
+        if not final:
+            for dest, msg in result.log[c]:
+                src = msg[1]
+                is_nogood = msg[0] == "nogood"
+                repeated = is_nogood and msg[2] in seen
+                arrow = FancyArrowPatch(pos[src], pos[dest], connectionstyle="arc3,rad=0.25",
+                                        arrowstyle="-|>", mutation_scale=14, shrinkA=22, shrinkB=22,
+                                        color=("#f4a6a6" if repeated else "#d62728") if is_nogood else "#7f7f7f",
+                                        lw=2.2 if is_nogood else 1.1, linestyle="--" if repeated else "-", zorder=2)
+                ax.add_patch(arrow)
+                if repeated:
+                    lines.append(f"({problem.labels[src]} repite un nogood ya enviado)")
+                elif is_nogood:
+                    seen.add(msg[2])
+                    lines.append(f"{problem.labels[src]} se bloquea y avisa a {problem.labels[dest]}:\n"
+                                 f"{_nogood_text(msg[2], problem)}")
+            if not lines:
+                lines.append("inicio: cada agente avisa de su color (ok?)" if c == 0
+                             else "los agentes cambian de color y se avisan (ok?)")
+            caption, box = "\n".join(lines), "#fdecea" if any("bloquea" in ln for ln in lines) else "#f2f2f2"
+        else:
+            ag = problem.labels[result.failed_agent]
+            caption = (f"{ag} tiene prohibidos TODOS sus colores\nsin depender de nadie ⇒ nogood vacío {{ }}\n"
+                       f"⇒ QUEDA DEMOSTRADO QUE NO HAY SOLUCIÓN")
+            box = "#d62728"
+        ax.text(0.5, -0.02, caption, transform=ax.transAxes, ha="center", va="top", fontsize=8.5,
+                color="white" if final else "black", fontweight="bold" if final else "normal",
+                bbox=dict(boxstyle="round,pad=0.4", facecolor=box, edgecolor="none"))
+        xs, ys = [p[0] for p in pos], [p[1] for p in pos]
+        ax.set_xlim(min(xs) - 0.7, max(xs) + 0.7)
+        ax.set_ylim(min(ys) - 0.6, max(ys) + 0.6)
+        ax.set_aspect("equal")
+        ax.set_title(f"ciclo {c}", fontsize=11, fontweight="bold")
+    legend = ("flecha gris = mensaje ok? (mi color)   ·   flecha roja = mensaje nogood (combinación prohibida)"
+              "   ·   roja discontinua = nogood repetido   ·   línea negra punteada = vecinas del mismo color")
+    if full_names:
+        legend += "\n" + "   ·   ".join(f"{s} = {f}" for s, f in zip(problem.labels, full_names))
+    fig.suptitle(f"{result.algorithm} con {problem.n_colors} colores: cómo demuestran los agentes que NO hay "
+                 f"solución\n(colores al final de cada ciclo; prioridad "
+                 f"{' > '.join(problem.labels)})", fontsize=13)
+    fig.text(0.5, 0.01, legend, ha="center", va="bottom", fontsize=9, color="#444444")
+    fig.tight_layout(rect=(0, 0.1, 1, 0.94))
+    fig.subplots_adjust(hspace=0.55)
+    out.save(fig, name)
